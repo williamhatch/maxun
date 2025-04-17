@@ -18,5 +18,5 @@
     "types": ["vite/client"],
     "outDir": "./build"
   },
-  "include": ["src", "vite-env.d.ts"]
+  "include": ["src", "server", "vite-env.d.ts"]
 }

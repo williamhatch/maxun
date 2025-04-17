@@ -16,8 +16,12 @@ import { computeNextRun } from '../utils/schedule';
 import { capture } from "../utils/analytics";
 import { encrypt, decrypt } from '../utils/auth';
 import { WorkflowFile } from 'maxun-core';
-import { cancelScheduledWorkflow, scheduleWorkflow } from '../schedule-worker';
-import { pgBoss } from '../pgboss-worker';
+// Import schedule-worker functions using CommonJS require
+const scheduleWorker = require('../schedule-worker');
+const { scheduleWorkflow, cancelScheduledWorkflow } = scheduleWorker;
+// Import pgBoss from worker using CommonJS require
+const pgBossWorker = require('../pgboss-worker');
+const { pgBoss } = pgBossWorker;
 chromium.use(stealthPlugin());
 
 export const router = Router();

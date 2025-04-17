@@ -1,4 +1,4 @@
-import { Action, ActionType, TagName } from "../types";
+import { Action, ActionType, TagName } from "../types/index";
 
 /**
  * A helper function to get the best selector for the specific user action.

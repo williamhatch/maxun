@@ -1,4 +1,5 @@
-import { Action, ActionType, Coordinates, TagName, DatePickerEventData } from "../../types";
+import { Coordinates, DatePickerEventData } from "../../types";
+import { Action, ActionType, TagName } from "../../types/index";
 import { WhereWhatPair, WorkflowFile } from 'maxun-core';
 import logger from "../../logger";
 import { Socket } from "socket.io";
@@ -842,7 +843,9 @@ export class WorkflowGenerator {
         timestamp: 0,
         isPassword: false,
         hasOnlyText: elementInfo?.hasOnlyText || false,
-      } as Action,
+        associatedActions: [],
+        key: action === ActionType.Keydown ? '' : undefined
+      } as any,
     );
     return bestSelector;
   }

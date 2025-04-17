@@ -15,7 +15,9 @@ import { chromium } from 'playwright-extra';
 import stealthPlugin from 'puppeteer-extra-plugin-stealth';
 import logger from "../logger";
 import { requireSignIn } from '../middlewares/auth';
-import { pgBoss } from '../pgboss-worker';
+// Import pgBoss from worker using CommonJS require
+const pgBossWorker = require('../pgboss-worker');
+const { pgBoss } = pgBossWorker;
 
 export const router = Router();
 chromium.use(stealthPlugin());

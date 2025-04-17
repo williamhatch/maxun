@@ -1,32 +1,27 @@
 /**
  * Worker process focused solely on scheduling logic
  */
-import PgBoss, { Job } from 'pg-boss';
-import logger from './logger';
-import Robot from './models/Robot';
-import { handleRunRecording } from './workflow-management/scheduler';
-import { computeNextRun } from './utils/schedule';
+const PgBoss = require('pg-boss');
+const logger = require('./logger').default;
+const Robot = require('./models/Robot').default;
+const { handleRunRecording } = require('./workflow-management/scheduler');
+const { computeNextRun } = require('./utils/schedule');
+const { uuid } = require('uuidv4');
 
 const pgBossConnectionString = `postgres://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
 
 const pgBoss = new PgBoss({connectionString: pgBossConnectionString });
 
-const registeredQueues = new Set<string>();
-
-interface ScheduledWorkflowData {
-  id: string;
-  runId: string;
-  userId: string;
-}
+const registeredQueues = new Set();
 
 /**
  * Utility function to schedule a cron job using PgBoss
- * @param id The robot ID
- * @param userId The user ID
- * @param cronExpression The cron expression for scheduling
- * @param timezone The timezone for the cron expression
+ * @param {string} id The robot ID
+ * @param {string} userId The user ID
+ * @param {string} cronExpression The cron expression for scheduling
+ * @param {string} timezone The timezone for the cron expression
  */
-export async function scheduleWorkflow(id: string, userId: string, cronExpression: string, timezone: string): Promise<void> {
+async function scheduleWorkflow(id, userId, cronExpression, timezone) {
   try {
     const runId = require('uuidv4').uuid();
 
@@ -44,7 +39,7 @@ export async function scheduleWorkflow(id: string, userId: string, cronExpressio
     await registerWorkerForQueue(queueName);
     
     logger.log('info', `Scheduled workflow job for robot ${id}`);
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to schedule workflow: ${errorMessage}`);
     throw error;
@@ -53,14 +48,14 @@ export async function scheduleWorkflow(id: string, userId: string, cronExpressio
 
 /**
  * Utility function to cancel a scheduled job
- * @param robotId The robot ID
- * @returns true if successful
+ * @param {string} robotId The robot ID
+ * @returns {Promise<boolean>} true if successful
  */
-export async function cancelScheduledWorkflow(robotId: string) {
+async function cancelScheduledWorkflow(robotId) {
   try {
     const jobs = await pgBoss.getSchedules();
     
-    const matchingJobs = jobs.filter((job: any) => {
+    const matchingJobs = jobs.filter((job) => {
       try {
         const data = job.data;
         return data && data.id === robotId;
@@ -75,7 +70,7 @@ export async function cancelScheduledWorkflow(robotId: string) {
     }
     
     return true;
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to cancel scheduled workflow: ${errorMessage}`);
     throw error;
@@ -84,8 +79,13 @@ export async function cancelScheduledWorkflow(robotId: string) {
 
 /**
  * Process a scheduled workflow job
+ * @param {Object} job - The job object
+ * @param {Object} job.data - The job data
+ * @param {string} job.data.id - Robot ID
+ * @param {string} job.data.runId - Run ID
+ * @param {string} job.data.userId - User ID
  */
-async function processScheduledWorkflow(job: Job<ScheduledWorkflowData>) {
+async function processScheduledWorkflow(job) {
   const { id, runId, userId } = job.data;
   logger.log('info', `Processing scheduled workflow job for robotId: ${id}, runId: ${runId}, userId: ${userId}`);
   
@@ -116,7 +116,7 @@ async function processScheduledWorkflow(job: Job<ScheduledWorkflowData>) {
     }
     
     return { success: true };
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Scheduled workflow job failed: ${errorMessage}`);
     return { success: false };
@@ -135,7 +135,7 @@ async function registerScheduledWorkflowWorker() {
     }
     
     logger.log('info', 'Scheduled workflow workers registered successfully');
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to register scheduled workflow workers: ${errorMessage}`);
   }
@@ -143,18 +143,19 @@ async function registerScheduledWorkflowWorker() {
 
 /**
  * Register a worker for a specific queue
+ * @param {string} queueName - The name of the queue
  */
-async function registerWorkerForQueue(queueName: string) {
+async function registerWorkerForQueue(queueName) {
   try {
     if (registeredQueues.has(queueName)) {
       return;
     }
     
-    await pgBoss.work(queueName, async (job: Job<ScheduledWorkflowData> | Job<ScheduledWorkflowData>[]) => {
+    await pgBoss.work(queueName, async (job) => {
       try {
         const singleJob = Array.isArray(job) ? job[0] : job;
         return await processScheduledWorkflow(singleJob);
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Scheduled workflow job failed in queue ${queueName}: ${errorMessage}`);
         throw error;
@@ -163,7 +164,7 @@ async function registerWorkerForQueue(queueName: string) {
     
     registeredQueues.add(queueName);
     logger.log('info', `Registered worker for queue: ${queueName}`);
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to register worker for queue ${queueName}: ${errorMessage}`);
   }
@@ -182,7 +183,7 @@ async function startScheduleWorker() {
     await registerScheduledWorkflowWorker();
 
     logger.log('info', 'Scheduling worker registered successfully');
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to start PgBoss scheduling worker: ${errorMessage}`);
     process.exit(1);
@@ -206,3 +207,9 @@ process.on('SIGINT', async () => {
   await pgBoss.stop();
   process.exit(0);
 });
+
+// Export functions for external use
+module.exports = {
+  scheduleWorkflow,
+  cancelScheduledWorkflow
+}; 

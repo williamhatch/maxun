@@ -1,6 +1,6 @@
 import { Namespace, Socket } from 'socket.io';
 import { IncomingMessage } from 'http';
-import { verify, JwtPayload } from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import logger from "../logger";
 import registerInputHandlers from '../browser-management/inputHandlers';
 
@@ -74,7 +74,7 @@ const socketAuthMiddleware = (socket: Socket, next: (err?: Error) => void) => {
     return next(new Error('Server configuration error'));
   }
   
-  verify(token, secret, (err: any, user: any) => {
+  jwt.verify(token, secret, (err: any, user: any) => {
     if (err) {
       logger.log('warn', `JWT verification error: ${err.message}`);
       return next(new Error('Authentication failed'));

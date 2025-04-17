@@ -1,57 +1,33 @@
 /**
  * Recording worker using PgBoss for asynchronous browser recording operations
  */
-import PgBoss, { Job } from 'pg-boss';
-import logger from './logger';
-import {
+const PgBoss = require('pg-boss');
+const logger = require('./logger').default;
+const {
   initializeRemoteBrowserForRecording,
   destroyRemoteBrowser,
   interpretWholeWorkflow,
   stopRunningInterpretation,
-} from './browser-management/controller';
-import { WorkflowFile } from 'maxun-core';
-import Run from './models/Run';
-import Robot from './models/Robot';
-import { browserPool } from './server';
-import { Page } from 'playwright';
-import { BinaryOutputService } from './storage/mino';
-import { capture } from './utils/analytics';
-import { googleSheetUpdateTasks, processGoogleSheetUpdates } from './workflow-management/integrations/gsheet';
-import { airtableUpdateTasks, processAirtableUpdates } from './workflow-management/integrations/airtable';
-import { RemoteBrowser } from './browser-management/classes/RemoteBrowser';
-import { io as serverIo } from "./server";
+} = require('./browser-management/controller');
+const { WorkflowFile } = require('maxun-core');
+const Run = require('./models/Run').default;
+const Robot = require('./models/Robot').default;
+const { browserPool } = require('./server');
+const { BinaryOutputService } = require('./storage/mino');
+const { capture } = require('./utils/analytics');
+const { googleSheetUpdateTasks, processGoogleSheetUpdates } = require('./workflow-management/integrations/gsheet');
+const { airtableUpdateTasks, processAirtableUpdates } = require('./workflow-management/integrations/airtable');
+const { RemoteBrowser } = require('./browser-management/classes/RemoteBrowser');
+const { io: serverIo } = require("./server");
 
 const pgBossConnectionString = `postgres://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
-
-interface InitializeBrowserData {
-  userId: string;
-}
-
-interface InterpretWorkflow {
-  userId: string;
-}
-
-interface StopInterpretWorkflow {
-  userId: string;
-}
-
-interface DestroyBrowserData {
-  browserId: string;
-  userId: string;
-}
-
-interface ExecuteRunData {
-  userId: string;
-  runId: string;
-  browserId: string;
-}
 
 const pgBoss = new PgBoss({connectionString: pgBossConnectionString });
 
 /**
  * Extract data safely from a job (single job or job array)
  */
-function extractJobData<T>(job: Job<T> | Job<T>[]): T {
+function extractJobData(job) {
   if (Array.isArray(job)) {
     if (job.length === 0) {
       throw new Error('Empty job array received');
@@ -61,7 +37,7 @@ function extractJobData<T>(job: Job<T> | Job<T>[]): T {
   return job.data;
 }
 
-function AddGeneratedFlags(workflow: WorkflowFile) {
+function AddGeneratedFlags(workflow) {
   const copy = JSON.parse(JSON.stringify(workflow));
   for (let i = 0; i < workflow.workflow.length; i++) {
     copy.workflow[i].what.unshift({
@@ -75,7 +51,7 @@ function AddGeneratedFlags(workflow: WorkflowFile) {
 /**
  * Function to reset browser state without creating a new browser
  */
-async function resetBrowserState(browser: RemoteBrowser): Promise<boolean> {
+async function resetBrowserState(browser) {
   try {
     const currentPage = browser.getCurrentPage();
     if (!currentPage) {
@@ -110,7 +86,7 @@ async function resetBrowserState(browser: RemoteBrowser): Promise<boolean> {
 /**
  * Modified checkAndProcessQueuedRun function - only changes browser reset logic
  */
-async function checkAndProcessQueuedRun(userId: string, browserId: string): Promise<boolean> {
+async function checkAndProcessQueuedRun(userId, browserId) {
   try {
     // Find the oldest queued run for this specific browser
     const queuedRun = await Run.findOne({
@@ -153,7 +129,7 @@ async function checkAndProcessQueuedRun(userId: string, browserId: string): Prom
     
     logger.log('info', `Scheduled queued run ${queuedRun.runId} to use browser ${browserId}, job ID: ${executeJobId}`);
     return true;
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Error checking for queued runs: ${errorMessage}`);
     return false;
@@ -163,7 +139,7 @@ async function checkAndProcessQueuedRun(userId: string, browserId: string): Prom
 /**
  * Modified processRunExecution function - only add browser reset
  */
-async function processRunExecution(job: Job<ExecuteRunData>) {
+async function processRunExecution(job) {
   try {
     const data = job.data;
     logger.log('info', `Processing run execution job for runId: ${data.runId}, browserId: ${data.browserId}`);
@@ -219,7 +195,7 @@ async function processRunExecution(job: Job<ExecuteRunData>) {
       const interpretationInfo = await browser.interpreter.InterpretRecording(
         workflow, 
         currentPage, 
-        (newPage: Page) => currentPage = newPage, 
+        (newPage) => currentPage = newPage, 
         plainRun.interpreterSettings
       );
       
@@ -292,7 +268,7 @@ async function processRunExecution(job: Job<ExecuteRunData>) {
 
         processAirtableUpdates();
         processGoogleSheetUpdates();
-      } catch (err: any) {
+      } catch (err) {
         logger.log('error', `Failed to update Google Sheet for run: ${plainRun.runId}: ${err.message}`);
       }
 
@@ -314,7 +290,7 @@ async function processRunExecution(job: Job<ExecuteRunData>) {
       }
       
       return { success: true };
-    } catch (executionError: any) {
+    } catch (executionError) {
       logger.log('error', `Run execution failed for run ${data.runId}: ${executionError.message}`);
       
       await run.update({
@@ -331,7 +307,7 @@ async function processRunExecution(job: Job<ExecuteRunData>) {
         try {
           await destroyRemoteBrowser(plainRun.browserId, data.userId);
           logger.log('info', `No queued runs found for browser ${plainRun.browserId}, browser destroyed`);
-        } catch (cleanupError: any) {
+        } catch (cleanupError) {
           logger.log('warn', `Failed to clean up browser for failed run ${data.runId}: ${cleanupError.message}`);
         }
       }
@@ -351,7 +327,7 @@ async function processRunExecution(job: Job<ExecuteRunData>) {
       return { success: false };
     }
     
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to process run execution job: ${errorMessage}`);
     return { success: false };
@@ -363,11 +339,11 @@ async function registerRunExecutionWorker() {
     const registeredUserQueues = new Map();
 
     // Worker for executing runs (Legacy)
-    await pgBoss.work('execute-run', async (job: Job<ExecuteRunData> | Job<ExecuteRunData>[]) => {
+    await pgBoss.work('execute-run', async (job) => {
       try {
         const singleJob = Array.isArray(job) ? job[0] : job;
         return await processRunExecution(singleJob);
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Run execution job failed: ${errorMessage}`);
         throw error;
@@ -382,11 +358,11 @@ async function registerRunExecutionWorker() {
         
         for (const queue of userQueues) {
           if (!registeredUserQueues.has(queue.name)) {
-            await pgBoss.work(queue.name, async (job: Job<ExecuteRunData> | Job<ExecuteRunData>[]) => {
+            await pgBoss.work(queue.name, async (job) => {
               try {
                 const singleJob = Array.isArray(job) ? job[0] : job;
                 return await processRunExecution(singleJob);
-              } catch (error: unknown) {
+              } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 logger.log('error', `Run execution job failed in ${queue.name}: ${errorMessage}`);
                 throw error;
@@ -397,7 +373,7 @@ async function registerRunExecutionWorker() {
             logger.log('info', `Registered worker for queue: ${queue.name}`);
           }
         }
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Failed to check for new user queues: ${errorMessage}`);
       }
@@ -406,7 +382,7 @@ async function registerRunExecutionWorker() {
     await checkForNewUserQueues();
     
     logger.log('info', 'Run execution worker registered successfully');
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to register run execution worker: ${errorMessage}`);
   }
@@ -423,7 +399,7 @@ async function startWorkers() {
     logger.log('info', 'PgBoss worker started successfully');
 
     // Worker for initializing browser recording
-    await pgBoss.work('initialize-browser-recording', async (job: Job<InitializeBrowserData> | Job<InitializeBrowserData>[]) => {
+    await pgBoss.work('initialize-browser-recording', async (job) => {
       try {
         const data = extractJobData(job);
         const userId = data.userId;
@@ -432,7 +408,7 @@ async function startWorkers() {
         const browserId = initializeRemoteBrowserForRecording(userId);
         logger.log('info', `Browser recording job completed with browserId: ${browserId}`);
         return { browserId };
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Browser recording job failed: ${errorMessage}`);
         throw error;
@@ -440,7 +416,7 @@ async function startWorkers() {
     });
 
     // Worker for stopping a browser
-    await pgBoss.work('destroy-browser', async (job: Job<DestroyBrowserData> | Job<DestroyBrowserData>[]) => {
+    await pgBoss.work('destroy-browser', async (job) => {
       try {
         const data = extractJobData(job);
         const { browserId, userId } = data;
@@ -449,7 +425,7 @@ async function startWorkers() {
         const success = await destroyRemoteBrowser(browserId, userId);
         logger.log('info', `Browser destruction job completed with result: ${success}`);
         return { success };
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Destroy browser job failed: ${errorMessage}`);
         throw error;
@@ -457,7 +433,7 @@ async function startWorkers() {
     });
 
     // Worker for interpreting workflow
-    await pgBoss.work('interpret-workflow', async (job: Job<InterpretWorkflow> | Job<InterpretWorkflow>[]) => {
+    await pgBoss.work('interpret-workflow', async (job) => {
       try {
         const data = extractJobData(job);
         const userId = data.userId;
@@ -466,7 +442,7 @@ async function startWorkers() {
         await interpretWholeWorkflow(userId);
         logger.log('info', 'Workflow interpretation job completed');
         return { success: true };
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Interpret workflow job failed: ${errorMessage}`);
         throw error;
@@ -474,7 +450,7 @@ async function startWorkers() {
     });
 
     // Worker for stopping workflow interpretation
-    await pgBoss.work('stop-interpretation', async (job: Job<StopInterpretWorkflow> | Job<StopInterpretWorkflow>[]) => {
+    await pgBoss.work('stop-interpretation', async (job) => {
       try {
         const data = extractJobData(job);
         const userId = data.userId;
@@ -483,7 +459,7 @@ async function startWorkers() {
         await stopRunningInterpretation(userId);
         logger.log('info', 'Stop interpretation job completed');
         return { success: true };
-      } catch (error: unknown) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.log('error', `Stop interpretation job failed: ${errorMessage}`);
         throw error;
@@ -494,7 +470,7 @@ async function startWorkers() {
     await registerRunExecutionWorker();
 
     logger.log('info', 'All recording workers registered successfully');
-  } catch (error: unknown) {
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.log('error', `Failed to start PgBoss workers: ${errorMessage}`);
     process.exit(1);
@@ -522,4 +498,4 @@ process.on('SIGINT', async () => {
 });
 
 // For use in other files
-export { pgBoss };
+module.exports = { pgBoss }; 

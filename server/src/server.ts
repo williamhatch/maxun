@@ -83,18 +83,22 @@ app.use('/proxy', proxy);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 readdirSync(path.join(__dirname, 'api')).forEach((r) => {
-  const route = require(path.join(__dirname, 'api', r));
-  const router = route.default || route;  // Use .default if available, fallback to route
-  if (typeof router === 'function') {
-    app.use('/api', router);  // Use the default export or named router
-  } else {
-    console.error(`Error: ${r} does not export a valid router`);
+  try {
+    const route = require(path.join(__dirname, 'api', r));
+    const router = route.default || route;  // Use .default if available, fallback to route
+    if (typeof router === 'function') {
+      app.use('/api', router);  // Use the default export or named router
+    } else {
+      console.error(`Error: ${r} does not export a valid router`);
+    }
+  } catch (error) {
+    console.error(`Error importing route ${r}:`, error);
   }
 });
 
 const isProduction = process.env.NODE_ENV === 'production';
-const workerPath = path.resolve(__dirname, isProduction ? './schedule-worker.js' : './schedule-worker.ts');
-const recordingWorkerPath = path.resolve(__dirname, isProduction ? './pgboss-worker.js' : './pgboss-worker.ts');
+const workerPath = path.resolve(__dirname, './schedule-worker.js');
+const recordingWorkerPath = path.resolve(__dirname, './pgboss-worker.js');
 
 let workerProcess: any;
 let recordingWorkerProcess: any;
