@@ -3,7 +3,7 @@ import logger from "../logger";
 import { createRemoteBrowserForRun, getActiveBrowserIdByState } from "../browser-management/controller";
 import { chromium } from 'playwright-extra';
 import stealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { browserPool } from "../server";
+import { browserPool, pgBossInstance } from "../server";
 import { uuid } from "uuidv4";
 import moment from 'moment-timezone';
 import cron from 'node-cron';
@@ -17,11 +17,11 @@ import { capture } from "../utils/analytics";
 import { encrypt, decrypt } from '../utils/auth';
 import { WorkflowFile } from 'maxun-core';
 // Import schedule-worker functions using CommonJS require
-const scheduleWorker = require('../schedule-worker');
-const { scheduleWorkflow, cancelScheduledWorkflow } = scheduleWorker;
+// const scheduleWorker = require('../schedule-worker');
+// const { scheduleWorkflow, cancelScheduledWorkflow } = scheduleWorker;
 // Import pgBoss from worker using CommonJS require
-const pgBossWorker = require('../pgboss-worker');
-const { pgBoss } = pgBossWorker;
+// const pgBossWorker = require('../pgboss-worker');
+// const { pgBoss } = pgBossWorker;
 chromium.use(stealthPlugin());
 
 export const router = Router();
@@ -681,9 +681,9 @@ router.post('/runs/run/:id', requireSignIn, async (req: AuthenticatedRequest, re
       const userQueueName = `execute-run-user-${req.user.id}`;
 
       // Queue the execution job
-      await pgBoss.createQueue(userQueueName);
+      await pgBossInstance.createQueue(userQueueName);
       
-      const jobId = await pgBoss.send(userQueueName, {
+      const jobId = await pgBossInstance.send(userQueueName, {
         userId: req.user.id,
         runId: req.params.id,
         browserId: plainRun.browserId
@@ -947,3 +947,60 @@ router.post('/runs/abort/:id', requireSignIn, async (req: AuthenticatedRequest, 
     return res.send(false);
   }
 });
+
+/**
+ * 安排工作流的定时执行
+ * @param id 机器人ID
+ * @param userId 用户ID
+ * @param cronExpression cron表达式
+ * @param timezone 时区
+ * @returns {Promise<string>} 作业ID
+ */
+async function scheduleWorkflow(id: string, userId: string, cronExpression: string, timezone: string) {
+  try {
+    const runId = uuid();
+    const queueName = `scheduled-workflow-${id}`;
+    
+    logger.log('info', `Scheduling workflow ${id} with cron expression ${cronExpression} in timezone ${timezone}`);
+
+    await pgBossInstance.createQueue(queueName);
+    
+    return await pgBossInstance.schedule(queueName, cronExpression, 
+      { id, runId, userId },
+      { tz: timezone }
+    );
+  } catch (error: any) {
+    logger.log('error', `Failed to schedule workflow: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * 取消工作流的定时执行
+ * @param robotId 机器人ID
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function cancelScheduledWorkflow(robotId: string) {
+  try {
+    const jobs = await pgBossInstance.getSchedules();
+    
+    const matchingJobs = jobs.filter((job: any) => {
+      try {
+        const data = job.data;
+        return data && data.id === robotId;
+      } catch {
+        return false;
+      }
+    });
+    
+    for (const job of matchingJobs) {
+      logger.log('info', `Cancelling scheduled job ${job.name} for robot ${robotId}`);
+      await pgBossInstance.unschedule(job.name);
+    }
+    
+    return true;
+  } catch (error: any) {
+    logger.log('error', `Failed to cancel scheduled workflow: ${error.message}`);
+    throw error;
+  }
+}

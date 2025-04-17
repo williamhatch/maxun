@@ -12,7 +12,6 @@ import cookieParser from 'cookie-parser';
 import { SERVER_PORT } from "./constants/config";
 import { Server } from "socket.io";
 import { readdirSync } from "fs"
-import { fork } from 'child_process';
 import { capture } from "./utils/analytics";
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './swagger/config';
@@ -20,6 +19,8 @@ import connectPgSimple from 'connect-pg-simple';
 import pg from 'pg';
 import session from 'express-session';
 import Run from './models/Run';
+import PgBoss from 'pg-boss';
+import { registerPgBossWorkers } from './workflow-management/pgboss';
 
 const app = express();
 app.use(cors({
@@ -96,41 +97,19 @@ readdirSync(path.join(__dirname, 'api')).forEach((r) => {
   }
 });
 
-const isProduction = process.env.NODE_ENV === 'production';
-const workerPath = path.resolve(__dirname, '../server/src/schedule-worker.js');
-const recordingWorkerPath = path.resolve(__dirname, '../server/src/pgboss-worker.js');
+// 初始化PgBoss
+const pgBossConnectionString = `postgres://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
+export const pgBossInstance = new PgBoss({connectionString: pgBossConnectionString });
 
-let workerProcess: any;
-let recordingWorkerProcess: any;
-
-if (!isProduction) {
-  workerProcess = fork(workerPath, [], {
-    execArgv: ['--inspect=5859'],
-    cwd: path.resolve(__dirname, '../dist')
-  });
-  workerProcess.on('message', (message: any) => {
-    console.log(`Message from worker: ${message}`);
-  });
-  workerProcess.on('error', (error: any) => {
-    console.error(`Error in worker: ${error}`);
-  });
-  workerProcess.on('exit', (code: any) => {
-    console.log(`Worker exited with code: ${code}`);
-  });
-
-  recordingWorkerProcess = fork(recordingWorkerPath, [], {
-    execArgv: ['--inspect=5860'],
-    cwd: path.resolve(__dirname, '../dist')
-  });
-  recordingWorkerProcess.on('message', (message: any) => {
-    console.log(`Message from recording worker: ${message}`);
-  });
-  recordingWorkerProcess.on('error', (error: any) => {
-    console.error(`Error in recording worker: ${error}`);
-  });
-  recordingWorkerProcess.on('exit', (code: any) => {
-    console.log(`Recording worker exited with code: ${code}`);
-  });
+// 在服务器启动时初始化PgBoss
+async function initializePgBoss() {
+  try {
+    await pgBossInstance.start();
+    logger.log('info', 'PgBoss initialized successfully');
+    await registerPgBossWorkers(pgBossInstance, browserPool);
+  } catch (error: any) {
+    logger.log('error', `Failed to initialize PgBoss: ${error.message}`);
+  }
 }
 
 app.get('/', function (req, res) {
@@ -158,6 +137,8 @@ server.listen(SERVER_PORT, '0.0.0.0', async () => {
   try {
     await connectDB();
     await syncDB();
+    // 初始化PgBoss，替代原来的worker进程
+    await initializePgBoss();
     logger.log('info', `Server listening on port ${SERVER_PORT}`);
   } catch (error: any) {
     logger.log('error', `Failed to connect to the database: ${error.message}`);
@@ -190,9 +171,14 @@ process.on('SIGINT', async () => {
     console.error('Error closing PostgreSQL connection pool:', error);
   }
 
-  if (!isProduction) {
-    if (workerProcess) workerProcess.kill();
-    if (recordingWorkerProcess) recordingWorkerProcess.kill();
+  // 关闭PgBoss
+  try {
+    console.log('Shutting down PgBoss...');
+    await pgBossInstance.stop();
+    console.log('PgBoss shutdown complete');
+  } catch (error) {
+    console.error('Error shutting down PgBoss:', error);
   }
+
   process.exit();
 });

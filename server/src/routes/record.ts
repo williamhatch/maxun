@@ -15,9 +15,8 @@ import { chromium } from 'playwright-extra';
 import stealthPlugin from 'puppeteer-extra-plugin-stealth';
 import logger from "../logger";
 import { requireSignIn } from '../middlewares/auth';
-// Import pgBoss from worker using CommonJS require
-const pgBossWorker = require('../pgboss-worker');
-const { pgBoss } = pgBossWorker;
+// Import pgBoss from server.ts
+import { pgBossInstance } from '../server';
 
 export const router = Router();
 chromium.use(stealthPlugin());
@@ -36,7 +35,7 @@ async function waitForJobCompletion(jobId: string, queueName: string, timeout = 
         }
         
         try {
-          const job = await pgBoss.getJobById(queueName, jobId);
+          const job = await pgBossInstance.getJobById(queueName, jobId);
           
           if (!job) {
             return reject(new Error(`Job ${jobId} not found`));
@@ -79,9 +78,9 @@ router.get('/start', requireSignIn, async (req: AuthenticatedRequest, res: Respo
     }
     
     try {
-        await pgBoss.createQueue('initialize-browser-recording');
+        await pgBossInstance.createQueue('initialize-browser-recording');
         
-        const jobId = await pgBoss.send('initialize-browser-recording', {
+        const jobId = await pgBossInstance.send('initialize-browser-recording', {
             userId: req.user.id,
             timestamp: new Date().toISOString()
         });
@@ -139,9 +138,9 @@ router.get('/stop/:browserId', requireSignIn, async (req: AuthenticatedRequest, 
     }
 
     try {
-        await pgBoss.createQueue('destroy-browser');
+        await pgBossInstance.createQueue('destroy-browser');
         
-        const jobId = await pgBoss.send('destroy-browser', {
+        const jobId = await pgBossInstance.send('destroy-browser', {
             browserId: req.params.browserId,
             userId: req.user.id,
             timestamp: new Date().toISOString()
@@ -221,9 +220,9 @@ router.get('/interpret', requireSignIn, async (req: AuthenticatedRequest, res) =
     }
 
     try {
-        await pgBoss.createQueue('interpret-workflow');
+        await pgBossInstance.createQueue('interpret-workflow');
         
-        const jobId = await pgBoss.send('interpret-workflow', {
+        const jobId = await pgBossInstance.send('interpret-workflow', {
             userId: req.user.id,
             timestamp: new Date().toISOString()
         });
@@ -258,9 +257,9 @@ router.get('/interpret/stop', requireSignIn, async (req: AuthenticatedRequest, r
     }
 
     try {
-        await pgBoss.createQueue('stop-interpretation');
+        await pgBossInstance.createQueue('stop-interpretation');
         
-        const jobId = await pgBoss.send('stop-interpretation', {
+        const jobId = await pgBossInstance.send('stop-interpretation', {
             userId: req.user.id,
             timestamp: new Date().toISOString()
         });
