@@ -97,8 +97,8 @@ readdirSync(path.join(__dirname, 'api')).forEach((r) => {
 });
 
 const isProduction = process.env.NODE_ENV === 'production';
-const workerPath = path.resolve(__dirname, './schedule-worker.js');
-const recordingWorkerPath = path.resolve(__dirname, './pgboss-worker.js');
+const workerPath = path.resolve(__dirname, '../server/src/schedule-worker.js');
+const recordingWorkerPath = path.resolve(__dirname, '../server/src/pgboss-worker.js');
 
 let workerProcess: any;
 let recordingWorkerProcess: any;
@@ -106,6 +106,7 @@ let recordingWorkerProcess: any;
 if (!isProduction) {
   workerProcess = fork(workerPath, [], {
     execArgv: ['--inspect=5859'],
+    cwd: path.resolve(__dirname, '../dist')
   });
   workerProcess.on('message', (message: any) => {
     console.log(`Message from worker: ${message}`);
@@ -119,6 +120,7 @@ if (!isProduction) {
 
   recordingWorkerProcess = fork(recordingWorkerPath, [], {
     execArgv: ['--inspect=5860'],
+    cwd: path.resolve(__dirname, '../dist')
   });
   recordingWorkerProcess.on('message', (message: any) => {
     console.log(`Message from recording worker: ${message}`);
